@@ -1,0 +1,77 @@
+image:
+  name: sonarsource/sonar-scanner-cli:11
+  entrypoint: [""]
+
+variables:
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+  GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+
+stages:
+  - owasp-dep-report
+  - sonarqube-check
+  - sonarqube-vulnerability-report
+
+owasp-dep-report:
+  tags:
+    - kh-shell
+  stage: owasp-dep-report
+  variables:
+    DC_VERSION: latest
+    DC_PROJECT: "$CI_PROJECT_NAME"
+  artifacts:
+    paths:
+      - owasp-dependency-report/dependency-check-report.html
+      - owasp-dependency-report/dependency-check-report.json
+  script:
+    - docker pull owasp/dependency-check:$DC_VERSION
+    - docker volume create owasp-dependency-check-data
+    - mkdir -p owasp-dependency-report
+    - chmod a+w owasp-dependency-report
+    - docker run --rm
+      --volume $(pwd)/owasp-dependency-report:/report:z
+      --volume $(pwd):/src:z
+      --volume owasp-dependency-check-data:/usr/share/dependency-check/data:z
+      owasp/dependency-check:$DC_VERSION
+      --scan /src
+      --enableExperimental
+      --format ALL
+      --project "$DC_PROJECT"
+      --out /report
+      --nvdApiKey "$NVD_API_KEY"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+    - if: $CI_COMMIT_BRANCH == 'staging'
+
+sonarqube-check:
+  stage: sonarqube-check
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner 
+      -Dsonar.projectVersion=$CI_COMMIT_BRANCH
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+    - if: $CI_COMMIT_BRANCH == 'staging'
+
+sonarqube-vulnerability-report:
+  stage: sonarqube-vulnerability-report
+  script:
+    - 'curl -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/issues/gitlab_sast_export?projectKey=dmytrii.lysak_symfony-the-fast-track_e194f6e1-d1e5-4e18-9a29-80e5ece99609&branch=${CI_COMMIT_BRANCH}&pullRequest=${CI_MERGE_REQUEST_IID}" -o gl-sast-sonar-report.json'
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+    - if: $CI_COMMIT_BRANCH == 'staging'
+  artifacts:
+    expire_in: 1 day
+    reports:
+      sast: gl-sast-sonar-report.json
+

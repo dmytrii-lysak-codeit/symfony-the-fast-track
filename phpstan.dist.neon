@@ -1,0 +1,18 @@
+parameters:
+    level: 8
+    paths:
+        - src
+    excludePaths:
+        - tests
+    tipsOfTheDay: false
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        -
+            identifier: missingType.iterableValue
+        -
+            identifier: missingType.generics
+    tmpDir: tmp
+
+rules:
+    - App\Standards\Rules\EchoRule
+    - App\Standards\Rules\NoDumpsInCodeRule
